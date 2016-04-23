@@ -12,17 +12,57 @@ let typeName = 'recipe';
 let setupIndex = function() {
 
   return client.indices.exists({
-    index: indexName
-  }).then((exists) => {
+      index: indexName
+    }).then((exists) => {
 
-    if (!exists) {
-      // TODO: Create an index if it doesn't exist.
-      // return client.indices.create({...})
+      if (!exists) {
+    // Create an index if it doesn't exist.
+    return client.indices.create({
+      index: indexName,
+      body: {
+        number_of_shards: 1,
+        number_of_replicas: 0,
+        analysis: {
+          analyzer: {
+            filtered_ingredients: {
+              type: 'standard',
+              stopwords: ['to', 'and', 'or', 'with', 'cup', 'cups', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'ounce', 'ounces', 'tablespoon', 'tablespoons', 'tablespons', 'tbsp', 'tbs', 'teaspoon', 'teaspoons', 'tsp', 'pinch', 'taste']
+            }
+          }
+        }
+      }
+    });
+  }
+}).then(() => {
+  // Put the mapping
+  return client.indices.putMapping({
+    index: indexName,
+    type: typeName,
+    body: {
+      properties: {
+        id: { type: 'string', index: 'not_analyzed' },
+        datePublished: {type: 'date'},
+        source: { type: 'string', index: 'not_analyzed' },
+        url: { type: 'string', index: 'not_analyzed' },
+        recipeYield: { type: 'string', index: 'not_analyzed' },
+        prepTime: { type: 'string', index: 'not_analyzed' },
+        cookTime: { type: 'string', index: 'not_analyzed' },
+        name: {
+          type: 'string',
+          analyzer: 'english'
+        },
+        description: {
+          type: 'string',
+          analyzer: 'english'
+        },
+        ingredients: {
+          type: 'string',
+          analyzer: 'filtered_ingredients',
+        }
+      }
     }
-  }).then(() => {
-    // TODO: define the mapping
-    // return client.indices.putMapping({...})
-  }).catch(console.log);
+  });
+}).catch(console.log);
 };
 
 let importData = function(filename) {

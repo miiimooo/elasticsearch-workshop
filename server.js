@@ -1,11 +1,11 @@
 'use strict';
 
-let express = require('express');
-let app = express();
+var express = require('express');
+var app = express();
 
 const elasticsearch = require('elasticsearch');
 let esclient = new elasticsearch.Client({host: 'localhost:9200'});
-let url = require('url');
+var url = require('url');
 
 
 /**
@@ -14,8 +14,8 @@ let url = require('url');
 app.get('/api/search', function (req, res) {
 
   // Get query parameters
-  let url_parts = url.parse(req.url, true);
-  let query = url_parts.query;
+  var url_parts = url.parse(req.url, true);
+  var query = url_parts.query;
 
   // If no query was specified, return nothing.
   if (!query.input) {
@@ -26,48 +26,84 @@ app.get('/api/search', function (req, res) {
     return;
   }
 
-  // TODO: improve this query.
-  let searchQuery = {
+  /****
+   * EDIT THIS PART
+   */
+
+  var searchQuery = {
     index: 'openrecipes',
+
     body: {
       query: {
-        match: {
-          '_all': {
-            query: query.input,
-          }
+        bool: {
+          must: [
+            {
+              match: {
+                '_all': {
+                  query: query.input,
+                  operator: 'and'
+                }
+              }
+            }
+          ]
         }
       },
-      // TODO: add aggregations.
+      aggs: {
+        sources: {
+          terms: {
+            field: 'source'
+          }
+        },
+        ingredients: {
+          terms: {
+            field: 'ingredients',
+            exclude: query.input + '.*'
+          }
+        },
+      }
     }
   };
-
-  if (query.ingredients) {
-    if (typeof query.ingredients == 'string') {
-      query.ingredients = [query.ingredients];
-    }
-
-    // TODO: add the ingredients from the request to filter the query.
-  }
 
   if (query.sources) {
     if (typeof query.sources == 'string') {
       query.sources = [query.sources];
     }
-
-    // TODO: add the sources from the request to filter the query.
+    searchQuery.body.post_filter = {    /////////////<<<<<<<<<<<<<<<<<<<<<<<<<
+      terms: {
+        source: query.sources
+      }
+    }
   }
 
-  // Add paging information to the query.
+  if (query.ingredients) {
+    if (typeof query.ingredients == 'string') {
+      query.ingredients = [query.ingredients];
+    }
+    searchQuery.body.query.bool.must.push({
+      match: {
+        ingredients: {
+          query: query.ingredients.join(' '),
+          operator: 'and'
+        }
+      }
+    });
+  }
+
+  /****
+   * END OF EDITABLE AREA
+   ****/
+
+    // Add paging information to the query.
   searchQuery.from = query.from || 0;
 
   esclient.search(searchQuery).then(function(result) {
     res.json({
       total: result.hits.total,
       hits: result.hits.hits.map((hit) => hit._source),
-      sourceFacet: [{key: 'bacon', doc_count: 10000}], // TODO get this data from an aggregation.
-      ingredientsFacet: [{key: 'tastykitchen', doc_count: 10000}], // TODO get this data from an aggregation.
-    });
-  }).catch(console.log)
+      sourceFacet: result.aggregations.sources.buckets,
+      ingredientsFacet: result.aggregations.ingredients.buckets
+  });
+}).catch(console.log)
 });
 
 
@@ -77,8 +113,8 @@ app.get('/api/search', function (req, res) {
 app.get('/api/suggest', function (req, res) {
 
   // Get query parameters
-  let url_parts = url.parse(req.url, true);
-  let query = url_parts.query;
+  var url_parts = url.parse(req.url, true);
+  var query = url_parts.query;
 
   // If no query was specified, return nothing.
   if (!query.input) {
@@ -86,23 +122,36 @@ app.get('/api/suggest', function (req, res) {
     return;
   }
 
-  // TODO: Build this query.
-  // let searchQuery = {
-  //   index: 'openrecipes',
-  //   size: 0,
-  //   body: {...}
-  // };
+  var searchQuery = {
+    index: 'openrecipes',
+    size: 0,
+    body: {
+      query: {
+        prefix: {
+          ingredients: query.input
+        }
+      },
+      aggs: {
+        ingredients: {
+          terms: {
+            field: 'ingredients',
+            include: query.input + '.*'
+          }
+        },
+      }
+    }
+  };
 
-  // TODO: remove this stub.
-  res.json([
-    {label: 'Bacon'},
-    {label: 'More bacon'},
-  ]);
+  /****
+   * END OF EDITABLE AREA
+   ****/
 
-  // TODO: uncomment the lines below to execute the query and return the results.
-  // esclient.search(searchQuery).then(function(result) {
-  //   res.json(result.aggregations.ingredients.buckets.map((bucket) => ({label: bucket.key})));
-  // }).catch(console.log)
+    // Add paging information to the query.
+  searchQuery.from = query.from || 0;
+
+  esclient.search(searchQuery).then(function(result) {
+    res.json(result.aggregations.ingredients.buckets.map((bucket) => ({label: bucket.key})));
+  }).catch(console.log)
 });
 
 app.use(express.static('public'));
@@ -118,4 +167,3 @@ app.use(express.static('node_modules/angular-resource'));
 app.listen(3000, function () {
   console.log('Example app listening on port 3000!');
 });
-
